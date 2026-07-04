@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#0a0e14" />
+  <title>Seattle Link 3D — Live Light Rail Map</title>
+  <meta name="description" content="Interactive real-time 3D map of the Seattle Link light rail. Follow trains live across the 1 Line and 2 Line." />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230a0e14'/%3E%3Ccircle cx='16' cy='16' r='9' fill='none' stroke='%2300c48c' stroke-width='3'/%3E%3Ccircle cx='16' cy='16' r='3' fill='%2345aaf7'/%3E%3C/svg%3E" />
+</head>
+<body>
+  <div id="app">
+    <div id="map"></div>
+
+    <!-- Brand -->
+    <header id="brand" class="glass">
+      <div class="brand-mark" aria-hidden="true"></div>
+      <div class="brand-text">
+        <h1>Seattle Link <span>3D</span></h1>
+        <p id="brand-sub">Live light rail tracker</p>
+      </div>
+    </header>
+
+    <!-- Data status pill -->
+    <div id="status-pill" class="glass" title="Data source status">
+      <span class="dot"></span>
+      <span id="status-text">Connecting…</span>
+    </div>
+
+    <!-- Top-right map controls -->
+    <nav id="controls" class="glass" aria-label="Map controls">
+      <button id="btn-daynight" title="Toggle day / night (D)"><span class="icon">☾</span></button>
+      <button id="btn-home" title="Reset view (H)"><span class="icon">⌂</span></button>
+      <button id="btn-buildings" class="active" title="Toggle 3D buildings (B)"><span class="icon">▦</span></button>
+      <button id="btn-labels" class="active" title="Toggle map labels (L)"><span class="icon">Aa</span></button>
+      <button id="btn-settings" title="Settings"><span class="icon">⚙</span></button>
+      <button id="btn-help" title="Help &amp; shortcuts (?)"><span class="icon">?</span></button>
+    </nav>
+
+    <!-- Sidebar -->
+    <aside id="sidebar" class="glass">
+      <div class="sidebar-tabs" role="tablist">
+        <button class="tab active" data-tab="trains" role="tab">Trains</button>
+        <button class="tab" data-tab="stations" role="tab">Stations</button>
+        <button class="tab" data-tab="lines" role="tab">Lines</button>
+      </div>
+      <div class="sidebar-body">
+        <section id="tab-trains" class="tab-panel active">
+          <div id="train-list" class="list"></div>
+          <p class="hint" id="train-list-hint">Waiting for train data…</p>
+        </section>
+        <section id="tab-stations" class="tab-panel">
+          <input id="station-filter" type="search" placeholder="Filter stations…" autocomplete="off" />
+          <div id="station-list" class="list"></div>
+        </section>
+        <section id="tab-lines" class="tab-panel">
+          <div id="line-list" class="list"></div>
+          <p class="hint">Click a line to fit it in view. Toggle the switch to show / hide it.</p>
+        </section>
+      </div>
+    </aside>
+    <button id="sidebar-toggle" class="glass" title="Toggle sidebar">☰</button>
+
+    <!-- Detail panel (train or station) -->
+    <aside id="detail" class="glass hidden" aria-live="polite">
+      <button id="detail-close" class="close" title="Close (Esc)">×</button>
+      <div id="detail-body"></div>
+    </aside>
+
+    <!-- Follow mode banner -->
+    <div id="follow-banner" class="glass hidden">
+      <span class="cam-icon">◉</span>
+      <span id="follow-label">Following</span>
+      <button id="follow-mode" title="Cycle camera: chase / overhead / orbit">chase</button>
+      <button id="follow-exit" title="Stop following (Esc)">exit</button>
+    </div>
+
+    <!-- Bottom HUD -->
+    <footer id="hud" class="glass">
+      <div class="hud-item" id="hud-clock" title="Seattle local time">--:--:--</div>
+      <div class="hud-sep"></div>
+      <div class="hud-item" id="hud-trains">0 trains</div>
+      <div class="hud-sep"></div>
+      <div class="hud-item" id="hud-age">—</div>
+      <div class="hud-sep sim-only hidden"></div>
+      <div class="hud-item sim-only hidden" id="hud-simspeed">
+        <button data-speed="1" class="speed active">1×</button>
+        <button data-speed="10" class="speed">10×</button>
+        <button data-speed="60" class="speed">60×</button>
+      </div>
+    </footer>
+
+    <!-- Hover tooltip for trains -->
+    <div id="tooltip" class="hidden"></div>
+
+    <!-- Settings modal -->
+    <div id="modal-settings" class="modal hidden">
+      <div class="modal-card glass">
+        <button class="close" data-close>×</button>
+        <h2>Settings</h2>
+        <label class="row">
+          <span>Terrain (3D hills)</span>
+          <input type="checkbox" id="set-terrain" />
+        </label>
+        <label class="row">
+          <span>Sky &amp; atmosphere</span>
+          <input type="checkbox" id="set-sky" checked />
+        </label>
+        <label class="row">
+          <span>Auto day / night by clock</span>
+          <input type="checkbox" id="set-autotime" checked />
+        </label>
+        <label class="row col">
+          <span>OneBusAway API key <small>(optional — the public <code>TEST</code> key is used by default; get a free personal key from Sound Transit if you hit rate limits)</small></span>
+          <input type="text" id="set-apikey" placeholder="TEST" spellcheck="false" />
+        </label>
+        <div class="row">
+          <button id="set-apply" class="primary">Apply</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Help modal -->
+    <div id="modal-help" class="modal hidden">
+      <div class="modal-card glass">
+        <button class="close" data-close>×</button>
+        <h2>Seattle Link 3D</h2>
+        <p>A real-time 3D map of Sound Transit's Link light rail — the <b class="c1">1 Line</b> (Lynnwood → Seattle → SeaTac → Federal Way) and the <b class="c2">2 Line</b> (Seattle → Bellevue → Redmond).</p>
+        <p>Positions come live from the OneBusAway Puget Sound API. When live data is unavailable, the app runs a realistic schedule simulation (see the badge in the top-middle).</p>
+        <h3>Interaction</h3>
+        <ul>
+          <li><b>Click a train</b> — details + follow it with a chase camera</li>
+          <li><b>Click a station</b> — live arrivals board</li>
+          <li>Drag to pan · right-drag / two fingers to rotate &amp; tilt · scroll to zoom</li>
+        </ul>
+        <h3>Keyboard</h3>
+        <ul class="keys">
+          <li><kbd>F</kbd> follow selected train</li>
+          <li><kbd>N</kbd> jump to next train</li>
+          <li><kbd>C</kbd> cycle follow camera</li>
+          <li><kbd>D</kbd> day / night</li>
+          <li><kbd>H</kbd> reset view</li>
+          <li><kbd>B</kbd> buildings</li>
+          <li><kbd>Esc</kbd> close / stop following</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Intro overlay -->
+    <div id="intro">
+      <div class="intro-inner">
+        <div class="intro-logo" aria-hidden="true"></div>
+        <h1>Seattle Link <span>3D</span></h1>
+        <p class="tag">Fly the Emerald City. Follow every train. Live.</p>
+        <button id="intro-start" class="primary">Take off</button>
+        <p class="intro-foot">1 Line · 2 Line · real-time positions via OneBusAway / Sound Transit open data</p>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
